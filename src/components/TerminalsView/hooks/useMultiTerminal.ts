@@ -5,7 +5,8 @@ import type { Terminal } from 'xterm';
 import type { FitAddon } from 'xterm-addon-fit';
 import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
-import { TERMINAL_THEME, TERMINAL_CONFIG } from '../constants';
+import { TERMINAL_CONFIG } from '../constants';
+import { getTerminalTheme } from '@/components/AgentWorld/constants';
 
 interface TerminalEntry {
   terminal: Terminal;
@@ -19,6 +20,10 @@ interface TerminalEntry {
 
 interface UseMultiTerminalOptions {
   agents: AgentStatus[];
+  initialFontSize?: number;
+  onFontSizeChange?: (size: number) => void;
+  theme?: 'dark' | 'light';
+  onTerminalReady?: (agentId: string) => void;
 }
 
 const MIN_FONT_SIZE = 8;
@@ -42,12 +47,15 @@ function safeFit(agentId: string, entry: TerminalEntry) {
   } catch {}
 }
 
-export function useMultiTerminal({ agents }: UseMultiTerminalOptions) {
+export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, theme = 'dark', onTerminalReady }: UseMultiTerminalOptions) {
   const terminalsRef = useRef<Map<string, TerminalEntry>>(new Map());
   const xtermModuleRef = useRef<{ Terminal: typeof Terminal; FitAddon: typeof FitAddon } | null>(null);
   const initializingRef = useRef<Set<string>>(new Set());
-  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
+  const [fontSize, setFontSize] = useState(initialFontSize ?? DEFAULT_FONT_SIZE);
   const fitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const prevInitialFontSizeRef = useRef(initialFontSize);
+  const onTerminalReadyRef = useRef(onTerminalReady);
+  onTerminalReadyRef.current = onTerminalReady;
 
   // Load xterm modules once
   const loadModules = useCallback(async () => {
@@ -103,7 +111,7 @@ export function useMultiTerminal({ agents }: UseMultiTerminalOptions) {
       }
 
       const term = new modules.Terminal({
-        theme: TERMINAL_THEME,
+        theme: getTerminalTheme(theme),
         fontSize,
         fontFamily: TERMINAL_CONFIG.fontFamily,
         cursorBlink: TERMINAL_CONFIG.cursorBlink,
@@ -176,10 +184,13 @@ export function useMultiTerminal({ agents }: UseMultiTerminalOptions) {
       resizeObserver.observe(container);
       entry.resizeObserver = resizeObserver;
 
+      // Notify caller that this terminal is ready to receive output
+      onTerminalReadyRef.current?.(agentId);
+
     } finally {
       initializingRef.current.delete(agentId);
     }
-  }, [agents, loadModules, fontSize, debouncedFit]);
+  }, [agents, loadModules, fontSize, debouncedFit, theme]);
 
   // Register a container element for an agent's terminal
   const registerContainer = useCallback((agentId: string, container: HTMLDivElement | null) => {
@@ -287,26 +298,49 @@ export function useMultiTerminal({ agents }: UseMultiTerminalOptions) {
     });
   }, []);
 
+  // Sync fontSize state when the persisted initialFontSize prop changes
+  // (e.g. settings loaded async, or changed from Settings page)
+  useEffect(() => {
+    if (initialFontSize !== undefined && initialFontSize !== prevInitialFontSizeRef.current) {
+      prevInitialFontSizeRef.current = initialFontSize;
+      setFontSize(initialFontSize);
+      applyFontSize(initialFontSize);
+    }
+  }, [initialFontSize, applyFontSize]);
+
   const zoomIn = useCallback(() => {
     setFontSize(prev => {
       const next = Math.min(prev + 1, MAX_FONT_SIZE);
       applyFontSize(next);
+      onFontSizeChange?.(next);
       return next;
     });
-  }, [applyFontSize]);
+  }, [applyFontSize, onFontSizeChange]);
 
   const zoomOut = useCallback(() => {
     setFontSize(prev => {
       const next = Math.max(prev - 1, MIN_FONT_SIZE);
       applyFontSize(next);
+      onFontSizeChange?.(next);
       return next;
     });
-  }, [applyFontSize]);
+  }, [applyFontSize, onFontSizeChange]);
 
   const zoomReset = useCallback(() => {
     setFontSize(DEFAULT_FONT_SIZE);
     applyFontSize(DEFAULT_FONT_SIZE);
-  }, [applyFontSize]);
+    onFontSizeChange?.(DEFAULT_FONT_SIZE);
+  }, [applyFontSize, onFontSizeChange]);
+
+  // Update theme on all live terminals when it changes
+  useEffect(() => {
+    const themeObj = getTerminalTheme(theme);
+    terminalsRef.current.forEach((entry) => {
+      if (!entry.disposed) {
+        entry.terminal.options.theme = themeObj;
+      }
+    });
+  }, [theme]);
 
   // Single global onOutput listener that dispatches to correct terminal
   useEffect(() => {

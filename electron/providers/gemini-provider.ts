@@ -32,7 +32,7 @@ export class GeminiProvider implements CLIProvider {
   }
 
   buildInteractiveCommand(params: InteractiveCommandParams): string {
-    let command = params.binaryPath;
+    let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
     // Model (Gemini uses -m flag)
     if (params.model) {
@@ -105,7 +105,7 @@ export class GeminiProvider implements CLIProvider {
   }
 
   buildOneShotCommand(params: OneShotCommandParams): string {
-    let command = params.binaryPath;
+    let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
     command += ' -p';
 

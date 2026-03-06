@@ -9,6 +9,7 @@ import {
   SettingsSidebar,
   InstallTerminalModal,
   GeneralSection,
+  TerminalSection,
   ObsidianSection,
   GitSection,
   NotificationsSection,
@@ -69,6 +70,8 @@ function SettingsPageInner() {
     switch (activeSection) {
       case 'general':
         return <GeneralSection info={info} appSettings={appSettings} onSaveAppSettings={handleSaveAppSettings} />;
+      case 'terminal':
+        return <TerminalSection appSettings={appSettings} onSaveAppSettings={handleSaveAppSettings} />;
       case 'obsidian':
         return <ObsidianSection appSettings={appSettings} onSaveAppSettings={handleSaveAppSettings} />;
       case 'git':

@@ -1,5 +1,5 @@
 import { ipcMain, dialog, shell } from 'electron';
-import { checkForUpdates } from '../services/update-checker';
+import { checkForUpdates, downloadUpdate, quitAndInstall } from '../services/update-checker';
 import { registerMemoryHandlers } from './memory-handlers';
 import { registerObsidianHandlers } from './obsidian-handlers';
 import * as path from 'path';
@@ -13,7 +13,9 @@ import { App as SlackApp, LogLevel } from '@slack/bolt';
 // Import types
 import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider } from '../types';
 import { buildFullPath } from '../utils/path-builder';
+import { decodeProjectPath } from '../utils/decode-project-path';
 import { getProvider, getAllProviders } from '../providers';
+import { writeProgrammaticInput } from '../core/pty-manager';
 
 // Dependencies interface for dependency injection
 export interface IpcHandlerDependencies {
@@ -382,10 +384,12 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     if (!agent) throw new Error('Agent not found');
 
     // Initialize PTY if agent was restored from disk and doesn't have one
+    let ptyJustCreated = false;
     if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
       console.log(`Agent ${id} needs PTY initialization`);
       const ptyId = await initAgentPty(agent);
       agent.ptyId = ptyId;
+      ptyJustCreated = true;
     }
 
     // Determine provider — prefer agent-level, fallback to options, default to 'claude'
@@ -561,20 +565,19 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const workingPath = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
     const fullCommand = `cd '${workingPath}' && ${command}`;
 
-    // For local provider, the PTY was just recreated — wait for shell to initialize
-    // before writing the command (matches Tasmania's 1s delay pattern).
-    // For claude provider, the PTY has been alive since agent:create, so no delay needed.
-    if (provider === 'local') {
+    // Wait for the shell to initialize before writing the command.
+    // A freshly-spawned PTY needs time for bash to start up (~200ms).
+    // Local provider always recreates the PTY, so it always needs the delay.
+    const needsDelay = ptyJustCreated || provider === 'local';
+    if (needsDelay) {
       await new Promise<void>((resolve) => {
         setTimeout(() => {
-          ptyProcess.write(fullCommand);
-          ptyProcess.write('\r');
+          writeProgrammaticInput(ptyProcess, fullCommand);
           resolve();
-        }, 1000);
+        }, 500);
       });
     } else {
-      ptyProcess.write(fullCommand);
-      ptyProcess.write('\r');
+      writeProgrammaticInput(ptyProcess, fullCommand);
     }
 
     // Save updated status
@@ -1464,6 +1467,14 @@ function registerUpdateHandlers(): void {
     return checkForUpdates();
   });
 
+  ipcMain.handle('app:downloadUpdate', async () => {
+    return downloadUpdate();
+  });
+
+  ipcMain.handle('app:quitAndInstall', async () => {
+    quitAndInstall();
+  });
+
   ipcMain.handle('app:openExternal', async (_event, url: string) => {
     shell.openExternal(url);
     return { success: true };
@@ -1480,45 +1491,6 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
       const claudeDir = path.join(os.homedir(), '.claude', 'projects');
       if (!fs.existsSync(claudeDir)) return [];
 
-      // Smart path decoding function (same as in getClaudeProjects)
-      const decodeClaudePath = (encoded: string): string => {
-        const parts = encoded.split('-').filter(Boolean);
-
-        const tryDecode = (index: number, currentPath: string): string | null => {
-          if (index >= parts.length) {
-            return fs.existsSync(currentPath) ? currentPath : null;
-          }
-
-          const withSlash = currentPath + '/' + parts[index];
-          if (fs.existsSync(withSlash)) {
-            const result = tryDecode(index + 1, withSlash);
-            if (result) return result;
-          }
-
-          for (let end = index + 1; end <= parts.length; end++) {
-            const combined = parts.slice(index, end).join('-');
-            const withCombined = currentPath + '/' + combined;
-
-            if (fs.existsSync(withCombined)) {
-              if (end === parts.length) {
-                return withCombined;
-              }
-              const result = tryDecode(end, withCombined);
-              if (result) return result;
-            }
-          }
-
-          return null;
-        };
-
-        const result = tryDecode(0, '');
-        if (result) return result;
-
-        // Fallback to simple decode if nothing found
-        let decoded = '/' + parts.join('/');
-        return decoded;
-      };
-
       const dirs = fs.readdirSync(claudeDir);
       const projects: Array<{ id: string; path: string; name: string }> = [];
 
@@ -1527,7 +1499,7 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
         const stat = fs.statSync(fullPath);
         if (!stat.isDirectory()) continue;
 
-        const decodedPath = decodeClaudePath(dir);
+        const decodedPath = decodeProjectPath(dir);
         projects.push({
           id: dir,
           path: decodedPath,
@@ -1765,9 +1737,10 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
   // Open in external terminal
   ipcMain.handle('shell:open-terminal', async (_event, { cwd, command }: { cwd: string; command?: string }) => {
     const shell = process.env.SHELL || '/bin/zsh';
+    const escapedCwd = cwd.replace(/'/g, "'\\''");
     const script = command
-      ? `tell application "Terminal" to do script "cd '${cwd}' && ${command}"`
-      : `tell application "Terminal" to do script "cd '${cwd}'"`;
+      ? `tell application "Terminal" to do script "cd '${escapedCwd}' && ${command}"`
+      : `tell application "Terminal" to do script "cd '${escapedCwd}'"`;
 
     const ptyProcess = pty.spawn(shell, ['-c', `osascript -e '${script.replace(/'/g, "'\\''")}'`], {
       name: 'xterm-256color',

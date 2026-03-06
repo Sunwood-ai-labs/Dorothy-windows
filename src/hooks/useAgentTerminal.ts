@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
 import type { AgentProvider } from '@/types/electron';
+import { getTerminalTheme } from '@/components/AgentWorld/constants';
 
 interface UseAgentTerminalProps {
   selectedAgentId: string | null;
   terminalRef: React.RefObject<HTMLDivElement | null>;
   provider?: AgentProvider;
+  terminalTheme?: 'dark' | 'light';
+  terminalFontSize?: number;
+  onReady?: (agentId: string) => void;
 }
 
 /**
@@ -31,11 +35,13 @@ function stripCursorSequences(data: string): string {
     .replace(/\x1b\[\?1049[hl]/g, '');
 }
 
-export function useAgentTerminal({ selectedAgentId, terminalRef, provider }: UseAgentTerminalProps) {
+export function useAgentTerminal({ selectedAgentId, terminalRef, provider, terminalTheme = 'dark', terminalFontSize = 13, onReady }: UseAgentTerminalProps) {
   const xtermRef = useRef<import('xterm').Terminal | null>(null);
   const fitAddonRef = useRef<import('xterm-addon-fit').FitAddon | null>(null);
   const [terminalReady, setTerminalReady] = useState(false);
   const selectedAgentIdRef = useRef<string | null>(null);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
 
   // Keep track of selected agent ID for event handling
   useEffect(() => {
@@ -63,30 +69,8 @@ export function useAgentTerminal({ selectedAgentId, terminalRef, provider }: Use
       const isGemini = provider === 'gemini';
 
       const term = new Terminal({
-        theme: {
-          background: '#0D0B08',
-          foreground: '#e4e4e7',
-          cursor: '#3D9B94',
-          cursorAccent: '#0D0B08',
-          selectionBackground: '#3D9B9433',
-          black: '#18181b',
-          red: '#ef4444',
-          green: '#22c55e',
-          yellow: '#eab308',
-          blue: '#3b82f6',
-          magenta: '#a855f7',
-          cyan: '#3D9B94',
-          white: '#e4e4e7',
-          brightBlack: '#52525b',
-          brightRed: '#f87171',
-          brightGreen: '#4ade80',
-          brightYellow: '#facc15',
-          brightBlue: '#60a5fa',
-          brightMagenta: '#c084fc',
-          brightCyan: '#67e8f9',
-          brightWhite: '#fafafa',
-        },
-        fontSize: 13,
+        theme: getTerminalTheme(terminalTheme),
+        fontSize: terminalFontSize,
         fontFamily: 'JetBrains Mono, Menlo, Monaco, Courier New, monospace',
         cursorBlink: true,
         cursorStyle: 'bar',
@@ -170,6 +154,7 @@ export function useAgentTerminal({ selectedAgentId, terminalRef, provider }: Use
       resizeObserver.observe(terminalRef.current!);
 
       setTerminalReady(true);
+      onReadyRef.current?.(selectedAgentId);
 
       // Write a welcome message
       term.writeln('\x1b[36m● Terminal connected to agent\x1b[0m');
@@ -221,7 +206,7 @@ export function useAgentTerminal({ selectedAgentId, terminalRef, provider }: Use
       }
       setTerminalReady(false);
     };
-  }, [selectedAgentId, terminalRef, provider]);
+  }, [selectedAgentId, terminalRef, provider, terminalTheme, terminalFontSize]);
 
   // Listen for agent output events
   useEffect(() => {

@@ -20,9 +20,12 @@ export class ClaudeProvider implements CLIProvider {
 
   getModels(): ProviderModel[] {
     return [
-      { id: 'sonnet', name: 'Sonnet', description: 'Balanced' },
-      { id: 'opus', name: 'Opus', description: 'Most capable' },
-      { id: 'haiku', name: 'Haiku', description: 'Fastest' },
+      { id: 'default', name: 'Default', description: 'Recommended' },
+      { id: 'sonnet', name: 'Sonnet', description: 'Daily coding' },
+      { id: 'opus', name: 'Opus', description: 'Complex reasoning' },
+      { id: 'haiku', name: 'Haiku', description: 'Fast & efficient' },
+      { id: 'sonnet[1m]', name: 'Sonnet 1M', description: '1M context window' },
+      { id: 'opusplan', name: 'Opus Plan', description: 'Extended thinking' },
     ];
   }
 
@@ -31,7 +34,7 @@ export class ClaudeProvider implements CLIProvider {
   }
 
   buildInteractiveCommand(params: InteractiveCommandParams): string {
-    let command = params.binaryPath;
+    let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
     // MCP config
     if (params.mcpConfigPath && fs.existsSync(params.mcpConfigPath)) {
@@ -45,7 +48,7 @@ export class ClaudeProvider implements CLIProvider {
 
     // Model
     if (params.model) {
-      if (!/^[a-zA-Z0-9._:/-]+$/.test(params.model)) {
+      if (!/^[a-zA-Z0-9._:\/\[\]-]+$/.test(params.model)) {
         throw new Error('Invalid model name');
       }
       command += ` --model '${params.model}'`;
@@ -123,7 +126,7 @@ export class ClaudeProvider implements CLIProvider {
   }
 
   buildOneShotCommand(params: OneShotCommandParams): string {
-    let command = params.binaryPath;
+    let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
     command += ' -p';
 

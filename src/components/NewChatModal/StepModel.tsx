@@ -31,9 +31,12 @@ interface ProviderModel {
 /** Static model definitions per provider */
 const PROVIDER_MODELS: Record<string, ProviderModel[]> = {
   claude: [
-    { id: 'sonnet', name: 'Sonnet', description: 'Balanced' },
-    { id: 'opus', name: 'Opus', description: 'Most capable' },
-    { id: 'haiku', name: 'Haiku', description: 'Fastest' },
+    { id: 'default', name: 'Default', description: 'Recommended' },
+    { id: 'sonnet', name: 'Sonnet', description: 'Daily coding' },
+    { id: 'opus', name: 'Opus', description: 'Complex reasoning' },
+    { id: 'haiku', name: 'Haiku', description: 'Fast & efficient' },
+    { id: 'sonnet[1m]', name: 'Sonnet 1M', description: '1M context window' },
+    { id: 'opusplan', name: 'Opus Plan', description: 'Extended thinking' },
   ],
   codex: [
     { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex', description: 'Recommended' },
@@ -51,7 +54,7 @@ const PROVIDER_MODELS: Record<string, ProviderModel[]> = {
 
 /** Default model per provider */
 const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
-  claude: 'sonnet',
+  claude: 'default',
   codex: 'gpt-5.2-codex',
   gemini: 'gemini-3-flash',
 };
@@ -193,7 +196,7 @@ const StepModel = React.memo(function StepModel({
       {provider !== 'local' ? (
         <div>
           <label className="block text-sm font-medium mb-2">Model</label>
-          <div className={`grid gap-3 ${(PROVIDER_MODELS[provider] || PROVIDER_MODELS.claude).length > 3 ? 'grid-cols-4' : 'grid-cols-3'}`}>
+          <div className={`grid gap-3 ${(PROVIDER_MODELS[provider] || PROVIDER_MODELS.claude).length === 4 ? 'grid-cols-4' : 'grid-cols-3'}`}>
             {(PROVIDER_MODELS[provider] || PROVIDER_MODELS.claude).map((m) => {
               const accentColor = provider === 'codex' ? 'accent-green' : provider === 'gemini' ? 'accent-purple' : 'accent-blue';
               return (

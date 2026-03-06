@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { decodeProjectPath } from '../utils/decode-project-path';
 
 export interface MemoryFile {
   name: string;
@@ -45,49 +46,6 @@ function isWithinProjectsDir(filePath: string): boolean {
   );
 }
 
-/**
- * Decode Claude's project directory name back to a filesystem path.
- * Encoding: absolute path with each '/' replaced by '-', prefixed with '-'.
- * e.g. '-Users-charlie-Documents-octav-server' → '/Users/charlie/Documents/octav-server'
- *
- * The naive replace-all approach breaks for directory names containing '-'
- * (e.g. 'octav-server' would wrongly become 'octav/server').
- * Instead we traverse the filesystem greedily: at each position we try the
- * longest possible hyphen-joined token that exists on disk, falling back to
- * shorter combinations if not found.
- */
-function decodePath(dirName: string): string {
-  const tokens = dirName.replace(/^-/, '').split('-');
-  let resolved = '/';
-  let i = 0;
-
-  while (i < tokens.length) {
-    let matched = false;
-    // Try longest match first to handle directory names that contain '-'
-    for (let len = tokens.length - i; len >= 1; len--) {
-      const name = tokens.slice(i, i + len).join('-');
-      const candidate = path.join(resolved, name);
-      try {
-        if (fs.existsSync(candidate)) {
-          resolved = candidate;
-          i += len;
-          matched = true;
-          break;
-        }
-      } catch {
-        // ignore fs errors, try shorter
-      }
-    }
-    if (!matched) {
-      // Nothing found on disk — just append the single token as-is
-      resolved = path.join(resolved, tokens[i]);
-      i++;
-    }
-  }
-
-  return resolved;
-}
-
 function getProjectName(decodedPath: string): string {
   return path.basename(decodedPath) || decodedPath;
 }
@@ -128,7 +86,7 @@ export function listProjectMemories(): ProjectMemory[] {
       if (!entry.isDirectory()) continue;
 
       const memoryDir = path.join(projectsDir, entry.name, 'memory');
-      const decodedPath = decodePath(entry.name);
+      const decodedPath = decodeProjectPath(entry.name);
       const projectName = getProjectName(decodedPath);
 
       const project: ProjectMemory = {

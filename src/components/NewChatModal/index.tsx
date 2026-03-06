@@ -100,7 +100,7 @@ export default function NewChatModal({
 
   // Step 2: Model
   const [provider, setProvider] = useState<AgentProvider>('claude');
-  const [model, setModel] = useState<string>('sonnet');
+  const [model, setModel] = useState<string>('default');
   const [localModel, setLocalModel] = useState('');
   const [tasmaniaEnabled, setTasmaniaEnabled] = useState(false);
   const [installedProviders, setInstalledProviders] = useState<Record<string, boolean>>({ claude: true, codex: true, gemini: true });

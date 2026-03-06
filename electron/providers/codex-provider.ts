@@ -32,7 +32,7 @@ export class CodexProvider implements CLIProvider {
   }
 
   buildInteractiveCommand(params: InteractiveCommandParams): string {
-    let command = params.binaryPath;
+    let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
     // Model
     if (params.model) {
@@ -96,7 +96,7 @@ export class CodexProvider implements CLIProvider {
   }
 
   buildOneShotCommand(params: OneShotCommandParams): string {
-    let command = params.binaryPath;
+    let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
     if (params.model) {
       command += ` --model ${params.model}`;

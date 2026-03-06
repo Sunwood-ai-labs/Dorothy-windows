@@ -294,6 +294,8 @@ export interface ElectronAPI {
       tasmaniaEnabled: boolean;
       tasmaniaServerPath: string;
       defaultProvider?: string;
+      terminalFontSize?: number;
+      terminalTheme?: 'dark' | 'light';
       cliPaths?: {
         claude: string;
         gh: string;
@@ -326,6 +328,8 @@ export interface ElectronAPI {
       tasmaniaEnabled?: boolean;
       tasmaniaServerPath?: string;
       defaultProvider?: string;
+      terminalFontSize?: number;
+      terminalTheme?: 'dark' | 'light';
       cliPaths?: {
         claude: string;
         gh: string;
@@ -682,23 +686,30 @@ export interface ElectronAPI {
 
   // Updates
   updates?: {
-    check: () => Promise<{
-      currentVersion: string;
-      latestVersion: string;
-      downloadUrl: string;
-      releaseUrl: string;
-      releaseNotes: string;
-      hasUpdate: boolean;
-    } | null>;
+    check: () => Promise<{ devMode?: boolean; error?: boolean; fallback?: boolean; currentVersion?: string } | null>;
+    download: () => Promise<unknown>;
+    quitAndInstall: () => Promise<void>;
     openExternal: (url: string) => Promise<{ success: boolean }>;
     onUpdateAvailable: (callback: (info: {
       currentVersion: string;
       latestVersion: string;
-      downloadUrl: string;
-      releaseUrl: string;
       releaseNotes: string;
       hasUpdate: boolean;
+      downloadUrl?: string;
+      releaseUrl?: string;
     }) => void) => () => void;
+    onUpdateNotAvailable: (callback: (info: {
+      currentVersion: string;
+      latestVersion: string;
+    }) => void) => () => void;
+    onDownloadProgress: (callback: (progress: {
+      percent: number;
+      bytesPerSecond: number;
+      transferred: number;
+      total: number;
+    }) => void) => () => void;
+    onUpdateDownloaded: (callback: () => void) => () => void;
+    onUpdateError: (callback: (error: string) => void) => () => void;
   };
 
   // Obsidian vault browsing & editing

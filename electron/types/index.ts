@@ -74,4 +74,6 @@ export interface AppSettings {
   cliPaths: CLIPaths;
   defaultProvider?: AgentProvider;
   obsidianVaultPaths?: string[];
+  terminalFontSize?: number;
+  terminalTheme?: 'dark' | 'light';
 }

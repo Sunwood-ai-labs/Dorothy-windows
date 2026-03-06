@@ -11,7 +11,7 @@ import { AgentStatus, AppSettings, AgentCharacter } from '../types';
 import { API_PORT, VAULT_DIR, API_TOKEN_FILE } from '../constants';
 import { isSuperAgent } from '../utils';
 import { agents, saveAgents, initAgentPty } from '../core/agent-manager';
-import { ptyProcesses } from '../core/pty-manager';
+import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { buildFullPath } from '../utils/path-builder';
 import { generateTaskFromPrompt } from '../utils/kanban-generate';
 import { getVaultDb } from './vault-db';
@@ -238,7 +238,7 @@ export function startApiServer(
           return;
         }
 
-        const workingDir = agent.worktreePath || agent.projectPath;
+        const workingDir = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
         let command = `cd '${workingDir}' && claude`;
 
         // Detect if this is an automation agent (use print mode for one-shot execution)
@@ -385,8 +385,7 @@ export function startApiServer(
 
         const ptyProcess = ptyProcesses.get(agent.ptyId);
         if (ptyProcess) {
-          ptyProcess.write(message);
-          ptyProcess.write('\r');
+          writeProgrammaticInput(ptyProcess, message);
           agent.status = 'running';
           agent.lastActivity = new Date().toISOString();
           saveAgents();

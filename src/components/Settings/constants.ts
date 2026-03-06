@@ -17,6 +17,7 @@ import type { SettingsSection } from './types';
 
 export const SECTIONS: { id: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'general', label: 'General', icon: Settings },
+  { id: 'terminal', label: 'Terminal', icon: Terminal },
   { id: 'obsidian', label: 'Obsidian', icon: ObsidianIcon },
   { id: 'git', label: 'Git', icon: GitCommit },
   { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -64,6 +65,8 @@ export const DEFAULT_APP_SETTINGS = {
   autoCheckUpdates: true,
   defaultProvider: 'claude',
   obsidianVaultPaths: [] as string[],
+  terminalFontSize: 11,
+  terminalTheme: 'dark' as const,
   cliPaths: {
     claude: '',
     codex: '',

@@ -1,18 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Settings, RefreshCw, Download, ExternalLink, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Settings, RefreshCw, Download, ExternalLink, CheckCircle, AlertCircle, Loader2, RotateCw } from 'lucide-react';
 import { Toggle } from './Toggle';
 import type { ClaudeInfo, AppSettings } from './types';
 
 interface UpdateInfo {
   currentVersion: string;
   latestVersion: string;
-  downloadUrl: string;
-  releaseUrl: string;
   releaseNotes: string;
   hasUpdate: boolean;
+  downloadUrl?: string;
+  releaseUrl?: string;
 }
 
-type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'update-available' | 'error';
+type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'update-available' | 'downloading' | 'downloaded' | 'error';
 
 interface GeneralSectionProps {
   info: ClaudeInfo | null;
@@ -24,6 +24,7 @@ export const GeneralSection = ({ info, appSettings, onSaveAppSettings }: General
   const [updateState, setUpdateState] = useState<UpdateState>('idle');
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [downloadPercent, setDownloadPercent] = useState(0);
   const [installedProviders, setInstalledProviders] = useState<Record<string, boolean>>({ claude: true, codex: true, gemini: true });
 
   useEffect(() => {
@@ -38,6 +39,33 @@ export const GeneralSection = ({ info, appSettings, onSaveAppSettings }: General
     });
   }, []);
 
+  // Listen for download progress, completion, and error events
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.electronAPI?.updates) return;
+    const unsubs: (() => void)[] = [];
+
+    if (window.electronAPI.updates.onDownloadProgress) {
+      unsubs.push(window.electronAPI.updates.onDownloadProgress((progress) => {
+        setDownloadPercent(progress.percent);
+      }));
+    }
+
+    if (window.electronAPI.updates.onUpdateDownloaded) {
+      unsubs.push(window.electronAPI.updates.onUpdateDownloaded(() => {
+        setUpdateState('downloaded');
+      }));
+    }
+
+    if (window.electronAPI.updates.onUpdateError) {
+      unsubs.push(window.electronAPI.updates.onUpdateError((err) => {
+        setUpdateState('error');
+        setUpdateError(err);
+      }));
+    }
+
+    return () => unsubs.forEach((fn) => fn());
+  }, []);
+
   const handleCheckForUpdates = async () => {
     if (!window.electronAPI?.updates) return;
 
@@ -46,23 +74,63 @@ export const GeneralSection = ({ info, appSettings, onSaveAppSettings }: General
 
     try {
       const result = await window.electronAPI.updates.check();
-      if (result) {
-        setUpdateInfo(result);
-        setUpdateState(result.hasUpdate ? 'update-available' : 'up-to-date');
-      } else {
+      if (result?.devMode) {
+        // Dev mode — electron-updater can't check unpacked apps
         setUpdateState('error');
-        setUpdateError('Could not reach GitHub. Check your internet connection.');
+        setUpdateError('Update check is only available in the production build.');
       }
+      // Otherwise, wait for update-available / update-not-available / error events
     } catch (err) {
       setUpdateState('error');
       setUpdateError(err instanceof Error ? err.message : 'Failed to check for updates');
     }
   };
 
-  const handleOpenLink = (url: string) => {
-    if (window.electronAPI?.updates?.openExternal) {
-      window.electronAPI.updates.openExternal(url);
+  // Listen for update-available and update-not-available events
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.electronAPI?.updates) return;
+    const unsubs: (() => void)[] = [];
+
+    if (window.electronAPI.updates.onUpdateAvailable) {
+      unsubs.push(window.electronAPI.updates.onUpdateAvailable((info) => {
+        if (info.hasUpdate) {
+          setUpdateInfo(info);
+          setUpdateState('update-available');
+        }
+      }));
     }
+
+    if (window.electronAPI.updates.onUpdateNotAvailable) {
+      unsubs.push(window.electronAPI.updates.onUpdateNotAvailable((info) => {
+        setUpdateInfo({
+          currentVersion: info.currentVersion,
+          latestVersion: info.latestVersion,
+          releaseNotes: '',
+          hasUpdate: false,
+        });
+        setUpdateState('up-to-date');
+      }));
+    }
+
+    return () => unsubs.forEach((fn) => fn());
+  }, []);
+
+  const isFallbackUpdate = !!(updateInfo?.downloadUrl);
+
+  const handleDownloadUpdate = () => {
+    if (isFallbackUpdate && updateInfo?.downloadUrl) {
+      // Fallback mode: open browser (no in-app download for old releases)
+      window.electronAPI?.updates?.openExternal(updateInfo.downloadUrl);
+    } else {
+      if (!window.electronAPI?.updates?.download) return;
+      setUpdateState('downloading');
+      setDownloadPercent(0);
+      window.electronAPI.updates.download();
+    }
+  };
+
+  const handleQuitAndInstall = () => {
+    window.electronAPI?.updates?.quitAndInstall();
   };
 
   return (
@@ -127,7 +195,7 @@ export const GeneralSection = ({ info, appSettings, onSaveAppSettings }: General
           </div>
         )}
 
-        {updateState === 'update-available' && updateInfo && (
+        {(updateState === 'update-available' || updateState === 'downloading' || updateState === 'downloaded') && updateInfo && (
           <div className="space-y-3">
             <div className="p-4 rounded-md bg-blue-500/10 border border-blue-500/20">
               <div className="flex items-start justify-between mb-2">
@@ -151,28 +219,58 @@ export const GeneralSection = ({ info, appSettings, onSaveAppSettings }: General
                 </div>
               )}
 
+              {/* Download progress bar */}
+              {updateState === 'downloading' && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                    <span>Downloading... {downloadPercent.toFixed(0)}%</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-400 rounded-full transition-all duration-300"
+                      style={{ width: `${downloadPercent}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-2 mt-3">
-                <button
-                  onClick={() => handleOpenLink(updateInfo.downloadUrl || updateInfo.releaseUrl)}
-                  className="px-3 py-1.5 text-sm bg-foreground text-background hover:bg-foreground/90 transition-colors flex items-center gap-2"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Download
-                </button>
-                <button
-                  onClick={() => handleOpenLink(updateInfo.releaseUrl)}
-                  className="px-3 py-1.5 text-sm border border-border hover:border-foreground text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  View Release
-                </button>
+                {updateState === 'update-available' && (
+                  <button
+                    onClick={handleDownloadUpdate}
+                    className="px-3 py-1.5 text-sm bg-foreground text-background hover:bg-foreground/90 transition-colors flex items-center gap-2"
+                  >
+                    {isFallbackUpdate ? <ExternalLink className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
+                    Download
+                  </button>
+                )}
+
+                {updateState === 'downloading' && (
+                  <button
+                    disabled
+                    className="px-3 py-1.5 text-sm bg-foreground/50 text-background cursor-not-allowed flex items-center gap-2"
+                  >
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Downloading...
+                  </button>
+                )}
+
+                {updateState === 'downloaded' && (
+                  <button
+                    onClick={handleQuitAndInstall}
+                    className="px-3 py-1.5 text-sm bg-green-600 text-white hover:bg-green-700 transition-colors flex items-center gap-2"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                    Restart to Apply
+                  </button>
+                )}
               </div>
             </div>
           </div>
         )}
 
         {updateState === 'error' && (
-          <div className="flex items-center gap-3 p-3 bg-red-500/10 border border-red-500/20">
+          <div className="flex items-center rounded-lg gap-3 p-3 bg-red-500/10 border border-red-500/20">
             <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
             <div>
               <p className="text-sm font-medium text-red-400">Failed to check for updates</p>

@@ -67,6 +67,8 @@ export interface AppSettings {
   cliPaths: CLIPaths;
   defaultProvider?: string;
   obsidianVaultPaths?: string[];
+  terminalFontSize?: number;
+  terminalTheme?: 'dark' | 'light';
 }
 
-export type SettingsSection = 'general' | 'git' | 'notifications' | 'telegram' | 'slack' | 'jira' | 'socialdata' | 'tasmania' | 'obsidian' | 'permissions' | 'skills' | 'cli' | 'system';
+export type SettingsSection = 'general' | 'terminal' | 'git' | 'notifications' | 'telegram' | 'slack' | 'jira' | 'socialdata' | 'tasmania' | 'obsidian' | 'permissions' | 'skills' | 'cli' | 'system';

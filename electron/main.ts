@@ -10,7 +10,7 @@
  * - Scheduler for automated tasks
  */
 
-import { app, BrowserWindow, Notification, shell } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -45,6 +45,7 @@ import {
   skillPtyProcesses,
   pluginPtyProcesses,
   killAllPty,
+  writeProgrammaticInput,
 } from './core/pty-manager';
 
 // Services
@@ -86,7 +87,7 @@ import { registerKanbanHandlers } from './handlers/kanban-handlers';
 import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerWorldHandlers } from './handlers/world-handlers';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
-import { checkForUpdates } from './services/update-checker';
+import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
 
 // Utils
@@ -523,10 +524,9 @@ app.whenReady().then(async () => {
       if (fullCommand.length > 100) {
         const tmpScript = path.join(os.tmpdir(), `claude-agent-${agentId}.sh`);
         fs.writeFileSync(tmpScript, `#!/bin/bash\n${fullCommand}\n`, { mode: 0o755 });
-        ptyProcess.write(`bash '${tmpScript}'\r`);
+        writeProgrammaticInput(ptyProcess, `bash '${tmpScript}'`);
       } else {
-        ptyProcess.write(fullCommand);
-        ptyProcess.write('\r');
+        writeProgrammaticInput(ptyProcess, fullCommand);
       }
 
       saveAgents();
@@ -546,34 +546,17 @@ app.whenReady().then(async () => {
   await setupMcpOrchestrator(appSettings);
   await configureStatusHooks();
 
-  // Auto-check for updates on startup
-  if (appSettings.autoCheckUpdates !== false) {
-    setTimeout(async () => {
-      try {
-        const updateInfo = await checkForUpdates();
-        if (updateInfo?.hasUpdate) {
-          // Notify the renderer so the UI can show an in-app update banner
-          const mainWin = getMainWindow();
-          if (mainWin && !mainWin.isDestroyed()) {
-            mainWin.webContents.send('app:update-available', updateInfo);
-          }
+  // Initialize electron-updater (wires up IPC events for progress, downloaded, error)
+  initAutoUpdater(getMainWindow);
+  setMainWindowGetter(getMainWindow);
 
-          // Also show OS notification as a secondary signal
-          if (Notification.isSupported()) {
-            const notification = new Notification({
-              title: 'Update Available',
-              body: `Dorothy ${updateInfo.latestVersion} is available (you have ${updateInfo.currentVersion})`,
-            });
-            notification.on('click', () => {
-              shell.openExternal(updateInfo.releaseUrl);
-            });
-            notification.show();
-          }
-        }
-      } catch (err) {
+  // Auto-check for updates on startup (electron-updater sends 'app:update-available' automatically)
+  if (appSettings.autoCheckUpdates !== false) {
+    setTimeout(() => {
+      checkForUpdates().catch((err) => {
         console.error('Auto-update check failed:', err);
-      }
-    }, 5000); // Delay 5s to let the app finish loading
+      });
+    }, 5000);
   }
 
   console.log('App initialization complete');
